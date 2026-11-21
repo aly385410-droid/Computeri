@@ -1,0 +1,40 @@
+name: Build Windows Package
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the full offline Windows package
+        run: |
+          Z=$(ls JudicialAgenda-Setup*.zip 2>/dev/null | grep -v Full | head -n1)
+          if [ -z "$Z" ]; then echo "::error::ارفع الملف JudicialAgenda-Setup.zip في الصفحة الرئيسية للمستودع أولاً"; exit 1; fi
+          mkdir work && unzip -q -o "$Z" -d work
+          S=$(dirname "$(find work -name Install.bat | head -n1)")
+          cd "$S"
+          curl -L --fail --retry 5 -o electron-v33.2.1-win32-x64.zip https://github.com/electron/electron/releases/download/v33.2.1/electron-v33.2.1-win32-x64.zip
+          echo "c325a6d905c67107e166267813ea2151ae7fd316c0a88de0081db0b9851a9946  electron-v33.2.1-win32-x64.zip" | sha256sum -c -
+          mkdir -p /tmp/ocrtmp && cd /tmp/ocrtmp && npm init -y >/dev/null && npm install tesseract.js@5.0.0 tesseract.js-core@5.0.0 --no-audit --no-fund
+          cd "$GITHUB_WORKSPACE/$S"
+          mkdir -p app/ocr
+          cp /tmp/ocrtmp/node_modules/tesseract.js/dist/tesseract.min.js /tmp/ocrtmp/node_modules/tesseract.js/dist/worker.min.js app/ocr/
+          cp /tmp/ocrtmp/node_modules/tesseract.js-core/tesseract-core*.wasm.js app/ocr/
+          ls -la app/ocr
+          cd "$(dirname "$GITHUB_WORKSPACE/$S")"
+          zip -qr "$GITHUB_WORKSPACE/JudicialAgenda-Setup-Full.zip" "$(basename "$S")"
+          ls -la "$GITHUB_WORKSPACE/JudicialAgenda-Setup-Full.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JudicialAgenda-Setup-Full
+          path: JudicialAgenda-Setup-Full.zip
+      - name: Publish release with download link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="win-${{ github.run_number }}"
+          gh release create "$TAG" JudicialAgenda-Setup-Full.zip --title "المساعد القضائي — حزمة ويندوز الكاملة $TAG" --notes "فك الضغط ثم شغّل Install.bat واختر النسخة الكاملة — لا يحتاج إنترنت"
+          echo "### رابط تحميل حزمة ويندوز الكاملة" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/releases/download/$TAG/JudicialAgenda-Setup-Full.zip" >> $GITHUB_STEP_SUMMARY
